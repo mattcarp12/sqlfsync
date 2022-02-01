@@ -11,7 +11,7 @@ import (
 
 type SqlFSync struct {
 	// pointer to database connection
-	db      *gorm.DB
+	db *gorm.DB
 
 	// list of directories to watch
 	watches []WatchEntry
@@ -19,17 +19,23 @@ type SqlFSync struct {
 
 type WatchEntry struct {
 	// full path to directory
-	path      string
+	path string
 
 	// Pointer to struct that represents
 	// the entity in the database
-	model     interface{}
+	model interface{}
 
 	fswatcher *fsnotify.Watcher
 }
 
 func New(db *gorm.DB) *SqlFSync {
 	return &SqlFSync{db: db}
+}
+
+func (sfs *SqlFSync) Close() {
+	for _, we := range sfs.watches {
+		we.fswatcher.Close()
+	}
 }
 
 func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
@@ -43,7 +49,8 @@ func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 	// Check the model has a "Path" field,
 	// or a struct field tag indicating
 	// which field holds the file path
-	t := v.Elem().Type()
+	e := v.Elem()
+	t := e.Type()
 	var structFieldName string
 	for i := 0; i < t.NumField(); i++ {
 		tag := t.Field(i).Tag
@@ -73,24 +80,33 @@ func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 					continue
 				}
 				log.Println("event:", event)
-				if event.Op&fsnotify.Create == fsnotify.Create {
+				if event.Op == fsnotify.Create {
 					log.Println("created file:", event.Name)
 
-					// Create copy of model
-					model := model
-
-					// Set the "Path" field to the created file.
-					// If "Path" is not a field, check for a field tag
-					reflect.ValueOf(model).Elem().FieldByName(structFieldName).SetString(event.Name)
+					// Create copy of model and set "path" field to event.Name
+					new := reflect.New(t)
+					new.Elem().FieldByName(structFieldName).SetString(event.Name)
 
 					// Insert into database
-					tx := sfs.db.Create(model)
+					tx := sfs.db.Create(new.Interface())
 
 					// What if there is an error?
 					if tx.Error != nil {
 						log.Println(tx.Error)
 					}
 
+				} else if event.Op == fsnotify.Remove {
+					log.Println("removed file: ", event.Name)
+					// Create filt copy of model for filtering purposes
+					filt := reflect.New(t)
+					filt.Elem().FieldByName(structFieldName).SetString(event.Name)
+
+					// Create copy of model to put to-be-deleted entry into
+					toDelete := reflect.New(t).Interface()
+					
+					sfs.db.Where(filt).Find(toDelete)
+
+					sfs.db.Delete(toDelete)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {

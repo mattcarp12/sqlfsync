@@ -69,14 +69,17 @@ func TestValidModelStruct(t *testing.T) {
 	if err != nil {
 		t.Error("This should be not an error")
 	}
+
+	sfs.Close()
 }
 
 type File struct {
+	ID        uint
 	Path      string `sqlfsync:"path"`
 	CreatedAt time.Time
 }
 
-func TestAddWatch(t *testing.T) {
+func TestAddSingle(t *testing.T) {
 	db := NewSqliteInMemoryDB()
 	db.AutoMigrate(&File{})
 	sfs := sqlfsync.New(db)
@@ -97,5 +100,62 @@ func TestAddWatch(t *testing.T) {
 	if f1.Name() != df1.Path {
 		t.Error("paths don't match")
 	}
+
+	sfs.Close()
+}
+
+func TestAddMultiple(t *testing.T) {
+	db := NewSqliteInMemoryDB()
+	db.AutoMigrate(&File{})
+	sfs := sqlfsync.New(db)
+
+	tempDir := t.TempDir()
+
+	sfs.AddWatch(tempDir, &File{})
+
+	f1, _ := os.CreateTemp(tempDir, "*")
+	time.Sleep(1 * time.Second)
+	os.CreateTemp(tempDir, "*")
+	time.Sleep(1 * time.Second)
+	os.CreateTemp(tempDir, "*")
+
+	time.Sleep(1 * time.Millisecond)
+
+	df := []File{}
+	db.Find(&df)
+
+	t.Logf("%+v", df)
+
+	// Make sure all 3 were created
+	if len(df) != 3 {
+		t.Error("not all entries are created")
+	}
+
+	// Make sure paths are distinct
+	if df[0].Path == df[1].Path ||
+		df[0].Path == df[2].Path ||
+		df[1].Path == df[2].Path {
+		t.Error("Paths are not distinct")
+	}
+
+	// Make sure CreatedAts are distinct
+	if df[0].CreatedAt.Equal(df[1].CreatedAt) ||
+		df[0].CreatedAt.Equal(df[2].CreatedAt) ||
+		df[1].CreatedAt.Equal(df[2].CreatedAt) {
+		t.Error("CreatedAt times are not distinct")
+	}
+
+	// Remove files
+	os.Remove(f1.Name())
+	time.Sleep(1 * time.Millisecond)
+
+	db.Find(&df)
+	t.Logf("%+v", df)
+	if len(df) != 2 {
+		t.Error("entry not deleted")
+	}
+
+
+	sfs.Close()
 
 }
