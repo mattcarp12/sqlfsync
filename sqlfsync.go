@@ -9,35 +9,44 @@ import (
 	"gorm.io/gorm"
 )
 
+// SqlFSync watches a set of directories for created or deleted files,
+// and inserts or deletes from the database, respectively.
 type SqlFSync struct {
 	// pointer to database connection
-	db *gorm.DB
+	DB *gorm.DB
 
 	// list of directories to watch
-	watches []WatchEntry
+	Watches []WatchEntry
 }
 
+// WatchEntry represents a single directory 
 type WatchEntry struct {
 	// full path to directory
-	path string
+	Path string
 
 	// Pointer to struct that represents
 	// the entity in the database
-	model interface{}
+	Model interface{}
 
-	fswatcher *fsnotify.Watcher
+	// Watches Path for create or delete events
+	FSWatcher *fsnotify.Watcher
 }
 
+// Create a new instance of SqlFSync
 func New(db *gorm.DB) *SqlFSync {
-	return &SqlFSync{db: db}
+	return &SqlFSync{DB: db}
 }
 
+// Stop watching all directories 
 func (sfs *SqlFSync) Close() {
-	for _, we := range sfs.watches {
-		we.fswatcher.Close()
+	for _, we := range sfs.Watches {
+		we.FSWatcher.Close()
 	}
 }
 
+// Start watching the specified path for create or delete events.
+// The model argument must be a pointer to a struct.
+// It must have a field tagged with sqlfsync:"path".
 func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 
 	// model argument must be a pointer to a struct
@@ -88,7 +97,7 @@ func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 					new.Elem().FieldByName(structFieldName).SetString(event.Name)
 
 					// Insert into database
-					tx := sfs.db.Create(new.Interface())
+					tx := sfs.DB.Create(new.Interface())
 
 					// What if there is an error?
 					if tx.Error != nil {
@@ -103,10 +112,10 @@ func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 
 					// Create copy of model to put to-be-deleted entry into
 					toDelete := reflect.New(t).Interface()
-					
-					sfs.db.Where(filt).Find(toDelete)
 
-					sfs.db.Delete(toDelete)
+					sfs.DB.Where(filt).Find(toDelete)
+
+					sfs.DB.Delete(toDelete)
 				}
 			case err, ok := <-watcher.Errors:
 				if !ok {
@@ -117,8 +126,8 @@ func (sfs *SqlFSync) AddWatch(path string, model interface{}) error {
 		}
 	}()
 
-	watch := WatchEntry{path: path, model: model, fswatcher: watcher}
-	sfs.watches = append(sfs.watches, watch)
+	watch := WatchEntry{Path: path, Model: model, FSWatcher: watcher}
+	sfs.Watches = append(sfs.Watches, watch)
 
 	return nil
 }

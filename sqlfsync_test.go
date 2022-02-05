@@ -155,7 +155,6 @@ func TestAddMultiple(t *testing.T) {
 		t.Error("entry not deleted")
 	}
 
-
 	sfs.Close()
 
 }
