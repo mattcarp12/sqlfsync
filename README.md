@@ -2,6 +2,8 @@
 
 Automatically syncronize your SQL database and filesystem. Built using [fsnotify](https://github.com/fsnotify/fsnotify) and [gorm](https://github.com/go-gorm/gorm).
 
+Please see [the documentation](https://pkg.go.dev/github.com/mattcarp12/sqlfsync).
+
 ## Installation
 
 ```
@@ -41,6 +43,9 @@ func main() {
 ```
 
 ## Contributing
+
 Pull requests are encouraged.
 
 ## License
+
+[MIT](https://opensource.org/licenses/MIT)
